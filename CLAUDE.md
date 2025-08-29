@@ -1,164 +1,88 @@
-# 📘 Claude Code – Project EPICs
+# 🤖 CLAUDE.md — Engineering Playbook for the Claude Code AI Agent
 
-> A secure, real-time, open-source React Poker Client designed to work with multiple backend architectures.
+> Operational rules for building and maintaining the **secure, real‑time, backend‑agnostic React poker client**.
+> Audience: automated agents and engineers working in this repo.
 
----
-
-## EPIC-01: Protocol & Core Data Model
-
-**Goal:**  
-Design a clean, versioned, backend-agnostic message protocol for communication between server and client. Define message schemas and types for poker actions, state updates, and player interactions.
-
-**Key Deliverables:**
-- `v1` Protocol Spec (JSON or Protobuf)
-- Message Types: `JoinTable`, `CardsDealt`, `ActionRequested`, `BetPlaced`, `HandEnded`, etc.
-- Handshake & authentication metadata
-- Snapshot vs. streaming updates
-- Versioning & capability flags
+Last updated: 2025‑08‑30
 
 ---
 
-## EPIC-02: State Engine & Event Reducer
+## 0) Ground Rules (read first)
 
-**Goal:**  
-Build the internal event-driven state machine that applies server messages and updates the client UI accordingly.
-
-**Key Deliverables:**
-- Immutable state representation of table, players, hand
-- Reducers for server events
-- Local prediction (e.g., action sent, optimistic highlight)
-- Undo/replay/debug support
+- **Authoritative server.** Client renders state; it never decides truth.
+- **Least‑information.** The client must never receive other players’ private cards or deck order.
+- **Protocol‑driven.** Only consume/emit fields defined in `/packages/protocol/`. No ad‑hoc additions.
+- **Pure logic.** Game state updates are produced by pure reducers from server events.
+- **Deterministic UI.** No random UI behavior; animations are deterministic and cancelable.
+- **Type safety.** TypeScript `strict` must remain enabled and green.
 
 ---
 
-## EPIC-03: Transport Layer Abstraction
+## 1) Repository Layout
 
-**Goal:**  
-Support real-time communication via pluggable transports like WebSocket, Socket.IO, or MQTT, abstracted behind a common interface.
+/apps/
+simulator/ # Reference backend + e2e harness (WS JSON)
+showcase/ # Demo app for dev + Storybook host
+/packages/
+client/ # React components, hooks, state machine
+protocol/ # Versioned message schemas + validators
+transport/ # WS (default), pluggable interfaces
+theme/ # Tokens, sounds, assets, i18n bundles
+/docs/
+protocol.md # Human-readable spec (mirrors /protocol)
+/tools/
+codegen/ # Schema -> TS types, guards, fixtures
+scripts/ # Repo-maintenance scripts
 
-**Key Deliverables:**
-- `Transport` interface
-- WebSocket implementation with reconnect + resume
-- Per-seat pub/sub channel support
-- JWT token handling
-- Offline/retry logic
 
----
-
-## EPIC-04: React Poker UI Kit
-
-**Goal:**  
-Create a set of highly modular React components representing the poker table, cards, chips, seats, actions, and other elements.
-
-**Key Deliverables:**
-- `<PokerTable />`, `<Seat />`, `<Card />`, `<ChipStack />`, `<ActionBar />`
-- Responsive layout (6-max, 9-max, HU)
-- Accessible & keyboard-friendly components
-- Animations (deal, bet, pot pull, showdown)
-- Component Storybook
+**Package manager:** `npm`.  
+**Build:** Vite / tsup (for packages).  
+**Node target:** LTS (>= 20).  
+**ESM first:** All packages are ESM.
 
 ---
 
-## EPIC-05: Seat & Auth Scoping
+## 2) TypeScript & Linting
 
-**Goal:**  
-Ensure each client only receives data scoped to their seat. Handle authentication and authorization per session.
-
-**Key Deliverables:**
-- JWT seat binding and token validation
-- Private vs. public message streams
-- Secure reconnect with resume token
-- Middleware for permission enforcement
-
----
-
-## EPIC-06: Security & Anti-Cheat
-
-**Goal:**  
-Ensure the client is secure, cheat-resistant, and leak-proof. No other players’ cards or server secrets should be accessible.
-
-**Key Deliverables:**
-- Server authority enforcement (never trust client)
-- Strict info scoping in protocol
-- Optionally: commit-reveal cryptographic dealing (provably fair)
-- Action rate limiting, replay protection
+- `tsconfig.json`:
+  - `"strict": true`, `"noUncheckedIndexedAccess": true`, `"exactOptionalPropertyTypes": true`
+  - `"moduleResolution": "bundler"`, `"types": ["vite/client"]`
+- ESLint:
+  - `@typescript-eslint` + `eslint-config-next` (if needed) or `eslint-config-airbnb-typescript` sans formatting rules.
+- Prettier:
+  - Use default config; no line‑length exceptions for generated types.
+- CI blocks merges on lint/type errors.
 
 ---
 
-## EPIC-07: Simulated Game Server (Reference)
+## 3) Protocol Discipline
 
-**Goal:**  
-Build a mock poker server to simulate games for local development, testing, and demo purposes.
+- Source of truth: `/packages/protocol/schema.ts` (or `.proto` if using Protobuf; keep a TS mirror).
+- Provide:
+  - **Types**: `ServerEvent`, `ClientCommand`, `Capabilities`, `TableSnapshot`
+  - **Runtime validators**: `isServerEvent(x): x is ServerEvent` (zod or custom guards)
+  - **Versioning**: `version: "1.x.y"`, plus `capabilities: string[]`
+  - **Ordering**: every server message includes `seq: number` (monotonic per table)
+  - **Scoping**: private messages include `scope: { tableId, seat, sessionId }`
+- Breaking changes require:
+  - Incremented major version
+  - Migration notes in `/docs/protocol.md`
+  - Conformance tests in `/apps/simulator`
 
-**Key Deliverables:**
-- Shuffle, deal, validate bets, showdowns
-- Simulate different player behaviors (AI bots)
-- Push events using the defined protocol
-- Serve snapshot on reconnect
-
----
-
-## EPIC-08: Developer Integration Kit
-
-**Goal:**  
-Make it easy for poker operators to plug Claude Code into their backend logic by using lightweight adapter patterns.
-
-**Key Deliverables:**
-- Adapter interface: backend-to-protocol
-- Reference adapter (Node.js or Go)
-- Backend conformance test suite
-- Operator onboarding docs
+**Never** log or persist full events if they may contain private data; redact fields first.
 
 ---
 
-## EPIC-09: Table Variants & UX Rules
+## 4) Transports (real‑time)
 
-**Goal:**  
-Support flexible table types and UX variants.
+- Default: **WebSocket over TLS**.
+- API (`/packages/transport`):
 
-**Key Deliverables:**
-- 6-max, 9-max, HU layout logic
-- Run-it-twice, straddle, ante, etc.
-- Turn timers, auto-post blinds, chat/emotes
-- UX flow for rebuy/reseat
-
----
-
-## EPIC-10: Theming & White-label Support
-
-**Goal:**  
-Make the client skinnable and brandable by different operators.
-
-**Key Deliverables:**
-- Theme tokens (colors, sounds, fonts, logos)
-- Configurable UI via JSON/CSS-in-JS
-- Language packs / i18n support
-- Custom animations (deal, chip movement)
-
----
-
-## EPIC-11: Testing, QA & Storybook
-
-**Goal:**  
-Ensure the code is battle-tested, stable, and easy to work with for contributors.
-
-**Key Deliverables:**
-- Jest unit tests for state machine
-- E2E tests for client-server gameplay
-- Visual tests for components
-- Storybook with test scenarios
-
----
-
-## EPIC-12: Docs & Open Source Portal
-
-**Goal:**  
-Build a polished open-source portal with developer onboarding, API docs, architecture overview, and contribution guidelines.
-
-**Key Deliverables:**
-- `README.md`, `CONTRIBUTING.md`, architecture diagrams
-- Protocol documentation (with live explorer)
-- Local dev setup guide
-- Example deployments & integrations
-
----
+```ts
+export interface Transport {
+  connect(url: string, token: string): Promise<void>;
+  subscribe(topic: string, onMessage: (data: Uint8Array | object) => void): () => void; // returns unsubscribe
+  publish(topic: string, msg: object): Promise<void>;
+  close(code?: number, reason?: string): Promise<void>;
+  onStatus?(cb: (s: "connecting"|"open"|"closed"|"error") => void): void;
+}
